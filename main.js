@@ -6,27 +6,30 @@ const { v3: uuidv3 } = require('uuid');
 
 const logger = console;
 
-const accountFileData = fs.readFileSync('akun.txt', 'utf8');
-const userIdList = accountFileData.split('\n').map(userId => userId.trim()).filter(userId => userId !== '');
+// Fungsi untuk membaca userId dari file
+function readUserIds(fileName) {
+  const accountFileData = fs.readFileSync(fileName, 'utf8');
+  return accountFileData.split('\n').map(userId => userId.trim()).filter(userId => userId !== '');
+}
 
-const proxyFileData = fs.readFileSync('proxy.txt', 'utf8');
-const httpProxyList = proxyFileData.split('\n').map(proxy => proxy.trim()).filter(proxy => proxy !== '');
+// Fungsi untuk membaca daftar httpProxy dari file
+function readHttpProxies(fileName) {
+  const proxyFileData = fs.readFileSync(fileName, 'utf8');
+  return proxyFileData.split('\n').map(proxy => proxy.trim()).filter(proxy => proxy !== '');
+}
 
+// Fungsi untuk menghubungkan ke WebSocket
 async function connectToWss(httpProxy, userId) {
   const deviceId = uuidv3(httpProxy, uuid.NIL);
   const customHeaders = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
   };
-  const agent = new HttpsProxyAgent(httpProxy);
   const uri = 'wss://proxy.wynd.network:4650/';
 
   while (true) {
     try {
-      const ws = new WebSocket(uri, {
-        agent: agent,
-        headers: customHeaders,
-        rejectUnauthorized: false,
-      });
+      const agent = new HttpsProxyAgent(httpProxy);
+      const ws = new WebSocket(uri, { agent, headers: customHeaders, rejectUnauthorized: false });
 
       ws.on('open', () => {
         logger.info('WebSocket connection opened');
@@ -34,7 +37,7 @@ async function connectToWss(httpProxy, userId) {
       });
 
       ws.on('message', (response) => handleMessage(response, ws, userId, deviceId, customHeaders));
-      
+
       ws.on('error', (error) => {
         logger.error(error);
         logger.error(httpProxy);
@@ -88,7 +91,17 @@ function handleMessage(response, ws, userId, deviceId, customHeaders) {
 }
 
 async function main() {
-  const tasks = httpProxyList.map((proxy, index) => connectToWss(proxy, userIdList[index % userIdList.length]));
+  const tasks = [];
+  for (let i = 1; i <= 5; i++) {
+    const akunFileName = `akun${i}.txt`;
+    const proxyFileName = `proxy${i}.txt`;
+    const userIds = readUserIds(akunFileName);
+    const httpProxies = readHttpProxies(proxyFileName);
+
+    for (let j = 0; j < Math.min(userIds.length, httpProxies.length); j++) {
+      tasks.push(connectToWss(httpProxies[j], userIds[j]));
+    }
+  }
   await Promise.all(tasks);
 }
 
